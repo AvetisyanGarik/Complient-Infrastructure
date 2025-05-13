@@ -1,0 +1,2 @@
+- name: Include tasks to generate and send the email
+  include_tasks: email.yml

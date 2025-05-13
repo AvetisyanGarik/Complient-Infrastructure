@@ -1,0 +1,50 @@
+- name: Collect all diffs from all hosts for email
+  ansible.builtin.set_fact:
+    all_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_text') | select('defined') | list }}"
+  run_once: true
+
+- name: Generate consolidated email content
+  ansible.builtin.set_fact:
+    email_body: |
+      ===============================
+      🔧 **Config Diff Report for All Hosts**
+      Date: {{ date_tag }}
+      ===============================
+      {% set total_added = 0 %}
+      {% set total_removed = 0 %}
+      {% for diff in all_diffs %}
+      ------------------------------
+      {% set lines = diff.split('\n') %}
+      {% if lines | length > 1 %}
+      **Host:** {{ lines[1] }}
+      ------------------------------
+      {% for line in lines[2:] %}
+      {{ line }}
+      {% endfor %}
+      {% else %}
+      **No diff for this host**
+      {% endif %}
+      {% set total_added = total_added + (lines | select('search', '➕ Added') | list | length) %}
+      {% set total_removed = total_removed + (lines | select('search', '🛑 Removed') | list | length) %}
+      {% endfor %}
+      ===============================
+      Total Changes:
+      - Total Added Lines: {{ total_added }}
+      - Total Removed Lines: {{ total_removed }}
+      ===============================
+
+- name: Send consolidated email notification with all diffs
+  ansible.builtin.mail:
+    host: "{{ smtp_host }}"
+    port: "{{ smtp_port }}"
+    username: "{{ smtp_username }}"
+    password: "{{ smtp_password }}"
+    to: "{{ email_to }}"
+    subject: "Config Diff Report for All Hosts on {{ date_tag }}"
+    body: "{{ email_body }}"
+    secure: always
+    sender: root
+    timeout: 20
+    charset: utf-8
+  run_once: true
+  delegate_to: localhost

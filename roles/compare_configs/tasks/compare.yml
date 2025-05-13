@@ -1,0 +1,55 @@
+- name: Get running config
+  cisco.ios.ios_command:
+    commands:
+      - show running-config
+  register: running_config
+
+- name: Read golden config from file
+  ansible.builtin.slurp:
+    src: "{{ golden_config_path }}"
+  register: golden_config
+
+- name: Decode configs
+  ansible.builtin.set_fact:
+    current_config_lines: "{{ running_config.stdout[0].split('\n') }}"
+    golden_config_lines: "{{ golden_config.content | b64decode | split('\n') }}"
+
+- name: Filter out Cisco-specific lines
+  ansible.builtin.set_fact:
+    filtered_current_config_lines: "{{ current_config_lines | select('search', '^!|^interface|^router|^line|^version') | list }}"
+    filtered_golden_config_lines: "{{ golden_config_lines | select('search', '^!|^interface|^router|^line|^version') | list }}"
+
+- name: Determine if there are differences
+  ansible.builtin.set_fact:
+    has_diff: >-
+      {{
+        (filtered_golden_config_lines | difference(filtered_current_config_lines)) | length > 0
+        or
+        (filtered_current_config_lines | difference(filtered_golden_config_lines)) | length > 0
+      }}
+
+- name: Set the diff content if differences exist
+  ansible.builtin.set_fact:
+    config_diff_text: |
+      ===============================
+      🔧 **Config Diff Report for {{ inventory_hostname }}**
+      Date: {{ date_tag }}
+      ===============================
+      **Golden Config Path:** {{ golden_config_path }}
+      -------------------------------------------------------
+      {% set added = filtered_current_config_lines | difference(filtered_golden_config_lines) %}
+      {% set removed = filtered_golden_config_lines | difference(filtered_current_config_lines) %}
+      {% if removed %}
+      === 🛑 Removed Lines (in Golden but Missing in Current) ===
+      {% for line in removed %}
+      - {{ line }}
+      {% endfor %}
+      {% endif %}
+      {% if added %}
+      === ➕ Added Lines (in Current but Missing in Golden) ===
+      {% for line in added %}
+      + {{ line }}
+      {% endfor %}
+      -------------------------------------------------------
+      {% endif %}
+  when: has_diff
