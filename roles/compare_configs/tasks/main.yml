@@ -1,2 +1,0 @@
-- name: Include tasks to compare configs
-  include_tasks: compare.yml

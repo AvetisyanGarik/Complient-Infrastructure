@@ -1,8 +1,0 @@
-- name: Compare Configs and Generate Email Reports
-  hosts: all
-  gather_facts: no
-  connection: network_cli
-  roles:
-    - utilities
-    - compare_configs
-    - email_report

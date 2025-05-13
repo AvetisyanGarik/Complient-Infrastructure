@@ -1,0 +1,18 @@
+---
+- name: Run Config Comparison for All Devices
+  hosts: all
+  gather_facts: no
+  become: no
+
+  tasks:
+    - name: Compare IOS Switch Config
+      include_playbook: ios_compare.yml
+      when: inventory_hostname in groups['ios']
+
+    - name: Compare ASA Firewall Config
+      include_playbook: asa_compare.yml
+      when: inventory_hostname in groups['asa']
+
+    - name: Compare FXOS Config
+      include_playbook: fxos_compare.yml
+      when: inventory_hostname in groups['fxos']

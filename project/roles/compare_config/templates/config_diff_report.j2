@@ -1,0 +1,40 @@
+===============================
+🔧 **Config Diff Report for All Hosts**
+Date: {{ date_tag }}
+===============================
+
+{% for diff in all_diffs %}
+------------------------------
+**Host:** 🔧 **Config Diff Report for {{ diff.hostname }}**
+------------------------------
+Date: {{ date_tag }}
+===============================
+
+**Golden Config Path:** {{ diff.golden_config_path }}
+
+-------------------------------------------------------
+
+{% if diff.removed %}
+=== 🛑 Removed Lines (in Golden but Missing in Current) ===
+{% for line in diff.removed %}
+- {{ line }}
+{% endfor %}
+{% endif %}
+
+{% if diff.added %}
+=== ➕ Added Lines (in Current but Missing in Golden) ===
+{% for line in diff.added %}
++ {{ line }}
+{% endfor %}
+{% endif %}
+
+-------------------------------------------------------
+{% endfor %}
+
+===============================
+Total Changes:
+
+- Total Added Lines: {{ total_added_lines }}
+- Total Removed Lines: {{ total_removed_lines }}
+
+===============================

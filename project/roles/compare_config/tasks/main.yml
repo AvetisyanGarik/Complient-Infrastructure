@@ -1,0 +1,87 @@
+---
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Set golden config path (static folder)
+  ansible.builtin.set_fact:
+    golden_config_path: "{{ golden_base_dir }}/{{ inventory_hostname }}_golden.txt"
+  delegate_to: localhost
+
+- name: Get running config (live, without backup)
+  cisco.ios.ios_command:
+    commands:
+      - show running-config
+  register: running_config
+  when: ansible_network_os == 'cisco.ios.ios'
+
+- name: Get ASA running config
+  cisco.asa.asa_command:
+    commands:
+      - show running-config
+  register: running_config
+  when: ansible_network_os == 'cisco.asa.asa'
+
+- name: Get FXOS running config
+  cisco.fxos.fxos_command:
+    commands:
+      - show running-config
+  register: running_config
+  when: ansible_network_os == 'cisco.fxos.fxos'
+
+- name: Read golden config from file
+  ansible.builtin.slurp:
+    src: "{{ golden_config_path }}"
+  register: golden_config
+
+- name: Decode configs
+  ansible.builtin.set_fact:
+    current_config_lines: "{{ running_config.stdout[0].split('\n') }}"
+    golden_config_lines: "{{ golden_config.content | b64decode | split('\n') }}"
+
+- name: Filter out Cisco-specific lines (e.g., timestamps, system info)
+  ansible.builtin.set_fact:
+    filtered_current_config_lines: "{{ current_config_lines | selectattr('search', '^(?!.*(Last configuration change|show|version|hostname)).*') | list }}"
+    filtered_golden_config_lines: "{{ golden_config_lines | selectattr('search', '^(?!.*(Last configuration change|show|version|hostname)).*') | list }}"
+
+- name: Determine if there are differences
+  ansible.builtin.set_fact:
+    has_diff: >-
+      {{
+        (filtered_golden_config_lines | difference(filtered_current_config_lines)) | length > 0
+        or
+        (filtered_current_config_lines | difference(filtered_golden_config_lines)) | length > 0
+      }}
+
+- name: Generate diff text if differences exist
+  ansible.builtin.set_fact:
+    config_diff_text: |
+      === Config Differences for {{ inventory_hostname }} ===
+      Date: {{ date_tag }}
+      Golden Config Path: {{ golden_config_path }}
+      -------------------------------------------------------
+      {% set added = filtered_current_config_lines | difference(filtered_golden_config_lines) %}
+      {% set removed = filtered_golden_config_lines | difference(filtered_current_config_lines) %}
+      {% if removed %}
+      --- Removed lines (in golden but missing in current) ---
+      {% for line in removed %}
+      - {{ line }}
+      {% endfor %}
+      {% endif %}
+      {% if added %}
+      +++ Added lines (in current but missing in golden) +++
+      {% for line in added %}
+      + {{ line }}
+      {% endfor %}
+      {% endif %}
+  when: has_diff
+
+- name: Save enhanced config diff to file (only if differences exist)
+  ansible.builtin.copy:
+    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt"
+    content: "{{ config_diff_text }}"
+  when: has_diff
+  delegate_to: localhost
