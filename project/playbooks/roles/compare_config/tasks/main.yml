@@ -1,48 +1,42 @@
 ---
 - name: Ensure output directory exists
-  ansible.builtin.file:
+  file:
     path: "{{ output_dir }}"
     state: directory
     mode: '0755'
+
+- name: Read golden config file content
+  slurp:
+    src: "{{ golden_base_dir }}/{{ inventory_hostname }}_golden.txt"
+  register: golden_config_content
   delegate_to: localhost
 
-- name: Set golden config path (static folder)
-  ansible.builtin.set_fact:
-    golden_config_path: "{{ golden_base_dir }}/{{ inventory_hostname }}_golden.txt"
-  delegate_to: localhost
+- name: Decode golden config lines
+  set_fact:
+    golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | list }}"
 
 - name: Get startup config (live, without backup)
   cisco.ios.ios_command:
     commands:
-      - show startup-config
+      - show running-config
   register: startup_config
   when: ansible_network_os == 'cisco.ios.ios'
 
-- name: Get ASA startup config
-  cisco.asa.asa_command:
-    commands:
-      - show startup-config
-  register: startup_config
-  when: ansible_network_os == 'cisco.asa.asa'
-
-- name: Read golden config from file
-  ansible.builtin.slurp:
-    src: "{{ golden_config_path }}"
-  register: golden_config
-  delegate_to: localhost
-
-- name: Decode and prepare configs
+- name: Decode startup config lines
   set_fact:
-    startup_config_lines: "{{ (startup_config.stdout[0] | default('')) | split('\n') | map('trim') | list }}"
+    startup_config_lines: "{{ startup_config.stdout[0].split('\n') | map('trim') | list }}"
+  when: startup_config is defined and startup_config.stdout is defined
 
 - name: Determine if there are differences
-  ansible.builtin.set_fact:
-    has_diff: >-
-      {{
-        (golden_config_lines | difference(current_config_lines)) | length > 0
-        or
-        (current_config_lines | difference(golden_config_lines)) | length > 0
-      }}
+  set_fact:
+    config_diff: "{{ (startup_config_lines | default([])) | difference(golden_config_lines | default([])) }}"
+
+- name: Show differences
+  debug:
+    msg: |
+      Differences found for {{ inventory_hostname }}:
+      {{ config_diff }}
+  when: config_diff | length > 0
 
 - name: Generate visually formatted config diff
   ansible.builtin.set_fact:
