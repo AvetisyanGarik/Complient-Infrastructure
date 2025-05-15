@@ -6,7 +6,3 @@
 - name: Run ASA comparison if ASA hosts exist
   import_playbook: asa_compare.yml
   when: groups['asa'] | length > 0
-
-- name: Run FXOS comparison if FXOS hosts exist
-  import_playbook: fxos_compare.yml
-  when: groups['fxos'] | length > 0

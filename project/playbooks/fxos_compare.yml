@@ -1,8 +1,0 @@
----
-- name: Compare Cisco FXOS config against golden config
-  hosts: fxos
-  gather_facts: no
-  connection: network_cli
-  
-  roles:
-    - role: compare_config
