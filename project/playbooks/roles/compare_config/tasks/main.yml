@@ -31,7 +31,7 @@
 - name: Determine if there are differences
   ansible.builtin.set_fact:
     config_diff: "{{ (startup_config_lines | default([])) | difference(golden_config_lines | default([])) }}"
-    has_diff: "{{ ((startup_config_lines | default([])) | difference(golden_config_lines | default([]))).length > 0 }}"
+    has_diff: "{{ ((startup_config_lines | default([])) | difference(golden_config_lines | default([]))) | length > 0 }}"
   when:
     - golden_config_lines is defined
     - startup_config_lines is defined
