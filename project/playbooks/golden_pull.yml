@@ -6,7 +6,7 @@
     git_username: "{{ lookup('env', 'GIT_USERNAME') }}"
     git_token: "{{ lookup('env', 'GIT_TOKEN') }}"
     repo_url: "{{ lookup('env', 'REPO_URL') }}"
-    target_dir: "/runner/project/Configs/Git_Golden_Configs"
+    target_dir: "{{golden_base_dir}}"
 
   tasks:
 
