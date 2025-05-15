@@ -2,11 +2,13 @@
 - name: Ensure Golden Configs Repo is Present and Up to Date
   hosts: localhost
   gather_facts: no
+  vars_files:
+    - ../vars/common_vars.yml  # adjust path as needed
   vars:
     git_username: "{{ lookup('env', 'GIT_USERNAME') }}"
     git_token: "{{ lookup('env', 'GIT_TOKEN') }}"
     repo_url: "{{ lookup('env', 'REPO_URL') }}"
-    target_dir: "{{golden_base_dir}}"
+    target_dir: "{{ golden_base_dir }}"
 
   tasks:
 
