@@ -1,12 +1,5 @@
 ---
-- name: Compare device configs against golden configs
-  hosts: all
-  gather_facts: no
 
-  vars_files:
-    - ../group_vars/common_vars.yml    # Adjust path as needed to include your common vars
-
-  tasks:
     - name: Ensure output directory exists
       file:
         path: "{{ output_dir }}"
