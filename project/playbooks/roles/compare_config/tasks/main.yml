@@ -25,13 +25,6 @@
   register: startup_config
   when: ansible_network_os == 'cisco.asa.asa'
 
-- name: Get FXOS startup config
-  cisco.fxos.fxos_command:
-    commands:
-      - show startup-config
-  register: startup_config
-  when: ansible_network_os == 'cisco.fxos.fxos'
-
 - name: Read golden config from file
   ansible.builtin.slurp:
     src: "{{ golden_config_path }}"
