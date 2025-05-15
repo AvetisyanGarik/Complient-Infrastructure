@@ -1,8 +1,11 @@
 ---
 - name: Compare Cisco IOS switch config against golden config
   hosts: ios
-  gather_facts: false
+  gather_facts: no
   connection: network_cli
 
+  vars_files:
+    - ../vars/common_vars.yml
+
   roles:
-    - role: compare_config
+    - compare_config
