@@ -3,5 +3,6 @@
   hosts: fxos
   gather_facts: no
   connection: network_cli
+  
   roles:
-    - compare_config
+    - role: compare_config

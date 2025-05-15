@@ -1,7 +1,8 @@
 ---
 - name: Compare Cisco ASA firewall config against golden config
   hosts: asa
-  gather_facts: no
+  gather_facts: false
   connection: network_cli
+
   roles:
-    - compare_config
+    - role: compare_config
