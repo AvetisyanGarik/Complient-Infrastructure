@@ -29,6 +29,7 @@
   ansible.builtin.slurp:
     src: "{{ golden_config_path }}"
   register: golden_config
+  delegate_to: localhost
 
 - name: Decode and prepare configs
   ansible.builtin.set_fact:
