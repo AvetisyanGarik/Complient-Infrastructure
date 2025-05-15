@@ -1,0 +1,43 @@
+---
+- name: Ensure Golden Configs Repo is Present and Up to Date
+  hosts: localhost
+  gather_facts: no
+  vars:
+    git_username: "{{ lookup('env', 'GIT_USERNAME') }}"
+    git_token: "{{ lookup('env', 'GIT_TOKEN') }}"
+    repo_url: "{{ lookup('env', 'REPO_URL') }}"
+    target_dir: "/runner/project/Configs/Git_Golden_Configs"
+
+  tasks:
+
+    - name: Check if Golden Config repo already exists
+      ansible.builtin.stat:
+        path: "{{ target_dir }}/.git"
+      register: repo_stat
+
+    - name: Clone Golden Config repo using HTTPS and PAT (if not present)
+      ansible.builtin.command: >
+        git clone https://{{ git_username }}:{{ git_token }}@{{ repo_url }} {{ target_dir }}
+      when: not repo_stat.stat.exists
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+      register: clone_output
+
+    - name: Pull latest updates if repo exists
+      ansible.builtin.command: git pull
+      args:
+        chdir: "{{ target_dir }}"
+      when: repo_stat.stat.exists
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+      register: pull_output
+
+    - name: Show clone output (if performed)
+      debug:
+        var: clone_output.stdout_lines
+      when: clone_output is defined
+
+    - name: Show pull output (if performed)
+      debug:
+        var: pull_output.stdout_lines
+      when: pull_output is defined
