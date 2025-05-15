@@ -1,18 +1,12 @@
 ---
-- name: Run Config Comparison for All Devices
-  hosts: all
-  gather_facts: no
-  become: no
+- name: Run IOS comparison if IOS hosts exist
+  import_playbook: ios_compare.yml
+  when: groups['ios'] | length > 0
 
-  tasks:
-    - name: Compare IOS Switch Config
-      include_playbook: ios_compare.yml
-      when: inventory_hostname in groups['ios']
+- name: Run ASA comparison if ASA hosts exist
+  import_playbook: asa_compare.yml
+  when: groups['asa'] | length > 0
 
-    - name: Compare ASA Firewall Config
-      include_playbook: asa_compare.yml
-      when: inventory_hostname in groups['asa']
-
-    - name: Compare FXOS Config
-      include_playbook: fxos_compare.yml
-      when: inventory_hostname in groups['fxos']
+- name: Run FXOS comparison if FXOS hosts exist
+  import_playbook: fxos_compare.yml
+  when: groups['fxos'] | length > 0
