@@ -8,13 +8,22 @@
 
 - name: Read golden config file content
   ansible.builtin.slurp:
-    src: "{{ golden_base_dir }}/{{ inventory_hostname }}_golden.txt"
+    src: "{{ golden_config_path }}"
   register: golden_config_content
   delegate_to: localhost
+  ignore_errors: true
+
+- name: Fail early if golden config file is missing
+  ansible.builtin.set_fact:
+    golden_config_lines: []
+  when: golden_config_content.failed is defined and golden_config_content.failed
 
 - name: Decode golden config lines
   ansible.builtin.set_fact:
     golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | list }}"
+  when:
+    - golden_config_content is defined
+    - golden_config_content.content is defined
 
 - name: Get startup config (live, without backup)
   cisco.ios.ios_command:
