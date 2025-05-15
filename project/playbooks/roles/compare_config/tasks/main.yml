@@ -32,9 +32,8 @@
   delegate_to: localhost
 
 - name: Decode and prepare configs
-  ansible.builtin.set_fact:
-    current_config_lines: "{{ startup_config.stdout[0] | split('\n') | map('trim') | list }}"
-    golden_config_lines: "{{ golden_config.content | b64decode | split('\n') | map('trim') | list }}"
+  set_fact:
+    startup_config_lines: "{{ (startup_config.stdout[0] | default('')) | split('\n') | map('trim') | list }}"
 
 - name: Determine if there are differences
   ansible.builtin.set_fact:
