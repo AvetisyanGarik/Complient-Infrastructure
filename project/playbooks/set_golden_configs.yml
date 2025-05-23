@@ -16,27 +16,27 @@
     - name: Get running config from Cisco IOS device
       cisco.ios.ios_command:
         commands:
-          - show running-config
+          - show startup-config
       when: ansible_network_os == 'cisco.ios.ios'
       register: startup_config_ios
 
     - name: Get startup config from Cisco ASA device
       cisco.asa.asa_command:
         commands:
-          - show running-config
+          - show startup-config
       when: ansible_network_os == 'cisco.asa.asa'
       register: startup_config_asa
 
     - name: Save IOS config locally
       copy:
         content: "{{ startup_config_ios.stdout[0] | default('') }}"
-        dest: "{{ golden_output_dir }}/{{ inventory_hostname }}_ios_golden.txt"
+        dest: "{{ golden_output_dir }}/{{ inventory_hostname }}.txt"
       when: ansible_network_os == 'cisco.ios.ios'
       delegate_to: localhost
 
     - name: Save ASA config locally
       copy:
         content: "{{ startup_config_asa.stdout[0] | default('') }}"
-        dest: "{{ golden_output_dir }}/{{ inventory_hostname }}_asa_golden.txt"
+        dest: "{{ golden_output_dir }}/{{ inventory_hostname }}.txt"
       when: ansible_network_os == 'cisco.asa.asa'
       delegate_to: localhost
