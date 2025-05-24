@@ -48,11 +48,16 @@
   when: (startup_config_ios is defined and startup_config_ios.stdout is defined) or
         (startup_config_asa is defined and startup_config_asa.stdout is defined)
 
-- name: Determine if there are differences
+- name: Set config_diff
   ansible.builtin.set_fact:
     config_diff: "{{ (startup_config_lines | default([])) | difference(golden_config_lines | default([])) }}"
-    has_diff: "{{ config_diff | length > 0 }}"
   when: golden_config_lines is defined
+
+- name: Set has_diff flag
+  ansible.builtin.set_fact:
+    has_diff: "{{ config_diff | length > 0 }}"
+  when: config_diff is defined
+
 
 - name: Show differences
   ansible.builtin.debug:
