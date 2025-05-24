@@ -1,6 +1,6 @@
 ---
 - name: Compare Cisco IOS switch config against golden config
-  hosts: switchess
+  hosts: switches
   gather_facts: no
   connection: network_cli
 
