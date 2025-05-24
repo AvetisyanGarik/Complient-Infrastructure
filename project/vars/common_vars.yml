@@ -3,7 +3,7 @@
 
 # Directory Paths for Configs
 
-golden_base_dir: "Configs/Git_Golden_Config"
+golden_base_dir: "Configs/Git_Golden_Configs"
 output_base_dir: "Configs/diff_output"
 output_dir: "{{ output_base_dir }}/{{ lookup('pipe', 'date +%Y-%m-%d') }}"
 date_tag: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
