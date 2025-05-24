@@ -7,7 +7,7 @@
 
 - name: Attempt to read golden config file content (ignore errors)
   ansible.builtin.slurp:
-    src: "{{ golden_base_dir }}/{{ inventory_hostname }}_golden.txt"
+    src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
   register: golden_config_content
   ignore_errors: true
   delegate_to: localhost
