@@ -1,8 +1,8 @@
 ---
 - name: Run IOS comparison if IOS hosts exist
   import_playbook: ios_compare.yml
-  when: groups['ios'] | length > 0
+  when: groups['switches'] | length > 0
 
 - name: Run ASA comparison if ASA hosts exist
   import_playbook: asa_compare.yml
-  when: groups['asa'] | length > 0
+  when: groups['firewalls'] | length > 0
