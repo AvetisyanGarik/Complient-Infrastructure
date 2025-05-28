@@ -30,7 +30,6 @@
   cisco.asa.asa_command:
     commands:
       - show startup-config
-    authorize: yes
   register: startup_config_asa
   when: ansible_network_os == 'cisco.asa.asa'
 
