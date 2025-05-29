@@ -55,10 +55,12 @@
   when: golden_config_content is defined and golden_config_content.content is defined
 
 
-- name: Set has_diff flag
+- name: Set config_diff
   ansible.builtin.set_fact:
-    has_diff: "{{ config_diff | length > 0 }}"
-  when: config_diff is defined
+    config_diff:
+      removed: "{{ golden_config_lines | difference(startup_config_lines) }}"
+      added: "{{ startup_config_lines | difference(golden_config_lines) }}"
+  when: golden_config_lines is defined and startup_config_lines is defined
 
 
 - name: Show differences
