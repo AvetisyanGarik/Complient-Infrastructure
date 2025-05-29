@@ -1,142 +1,153 @@
-  - name: Ensure output directory exists
-    ansible.builtin.file:
-      path: "{{ output_dir }}"
-      state: directory
-      mode: '0755'
-    delegate_to: localhost
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
 
-  - name: Set golden config path
-    ansible.builtin.set_fact:
-      golden_config_path: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
-    delegate_to: localhost
+- name: Attempt to read golden config file content (ignore errors)
+  ansible.builtin.slurp:
+    src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
+  register: golden_config_content
+  ignore_errors: true
+  delegate_to: localhost
 
-  # === GET STARTUP CONFIG PER PLATFORM ===
-  - name: Get startup config (Cisco IOS)
-    cisco.ios.ios_command:
-      commands:
-        - show startup-config
-    register: startup_config_output
-    when: ansible_network_os == 'cisco.ios.ios'
+- name: Set golden config lines if file was read
+  ansible.builtin.set_fact:
+    golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | list }}"
+  when: golden_config_content is defined and golden_config_content.content is defined
 
-  - name: Get startup config (Cisco ASA)
-    cisco.asa.asa_command:
-      commands:
-        - show startup-config
-    register: startup_config_output
-    when: ansible_network_os == 'cisco.asa.asa'
+### === PLATFORM-SPECIFIC CONFIG COLLECTION ===
 
-  # === READ GOLDEN CONFIG ===
-  - name: Read golden config from file
-    ansible.builtin.slurp:
-      src: "{{ golden_config_path }}"
-    register: golden_config
-    delegate_to: localhost
+- name: Get startup config (Cisco IOS)
+  cisco.ios.ios_command:
+    commands:
+      - show startup-config
+  register: startup_config_ios
+  when: ansible_network_os == 'cisco.ios.ios'
 
-  # === NORMALIZE BOTH CONFIGS ===
-  - name: Decode and normalize configs
-    ansible.builtin.set_fact:
-      current_config_lines: >-
-        {{
-          (startup_config_output.stdout[0] | regex_replace('\r', '')).split('\n')
-          | map('trim') | select('match', '.+') | list | sort
-        }}
-      golden_config_lines: >-
-        {{
-          (golden_config.content | b64decode | regex_replace('\r', '')).split('\n')
-          | map('trim') | select('match', '.+') | list | sort
-        }}
+- name: Get running config (Cisco ASA)
+  cisco.asa.asa_command:
+    commands:
+      - show startup-config
+  register: startup_config_asa
+  when: ansible_network_os == 'cisco.asa.asa'
 
-  # === DIFF DETECTION ===
-  - name: Determine if there are differences
-    ansible.builtin.set_fact:
-      has_diff: >-
-        {{
-          (golden_config_lines | difference(current_config_lines)) | length > 0
-          or
-          (current_config_lines | difference(golden_config_lines)) | length > 0
-        }}
+### === PLATFORM-INDEPENDENT PROCESSING ===
 
-  # === FORMATTED DIFF OUTPUT ===
-  - name: Generate visually formatted config diff
-    ansible.builtin.set_fact:
-      config_diff_text: |
-        ─────────────────────────────────────────────────────────────
-        🖥️ Host: {{ inventory_hostname }}
-        📄 Golden Config: {{ golden_config_path }}
-        📅 Timestamp: {{ date_tag }}
-        ─────────────────────────────────────────────────────────────
+- name: Normalize and sort startup config lines
+  ansible.builtin.set_fact:
+    startup_config_lines: >-
+      {{
+        (
+          startup_config_ios.stdout[0]
+          if startup_config_ios is defined and startup_config_ios.stdout is defined
+          else startup_config_asa.stdout[0]
+        ).split('\n') | map('trim') | select('match', '.+') | list | sort
+      }}
 
-        🔻 Missing (in Golden but not in Live):
-        {% set removed = golden_config_lines | difference(current_config_lines) %}
-        {% if removed %}
-        {% for line in removed %}
-          - [Line {{ golden_config_lines.index(line) + 1 }}] {{ line }}
-        {% endfor %}
-        {% else %}
-          ✅ None
-        {% endif %}
+- name: Set golden config lines if file was read
+  ansible.builtin.set_fact:
+    golden_config_lines: >-
+      {{
+        (golden_config_content.content | b64decode).split('\n') | map('trim') | select('match', '.+') | list | sort
+      }}
+  when: golden_config_content is defined and golden_config_content.content is defined
 
-        ─────────────────────────────────────────────────────────────
 
-        🔺 Added (in Live but not in Golden):
-        {% set added = current_config_lines | difference(golden_config_lines) %}
-        {% if added %}
-        {% for line in added %}
-          + [Line {{ current_config_lines.index(line) + 1 }}] {{ line }}
-        {% endfor %}
-        {% else %}
-          ✅ None
-        {% endif %}
+- name: Set has_diff flag
+  ansible.builtin.set_fact:
+    has_diff: "{{ config_diff | length > 0 }}"
+  when: config_diff is defined
 
-        ─────────────────────────────────────────────────────────────
-        ✅ End of diff for {{ inventory_hostname }}
-    when: has_diff
 
-  # === SAVE TO FILE IF DIFF EXISTS ===
-  - name: Save config diff to file
-    ansible.builtin.copy:
-      dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt"
-      content: "{{ config_diff_text }}"
-    when: has_diff
-    delegate_to: localhost
+- name: Show differences
+  ansible.builtin.debug:
+    msg: |
+      Differences found for {{ inventory_hostname }}:
+      {{ config_diff }}
+  when: has_diff | default(false)
 
-  # === BUILD EMAIL REPORT ===
-  - name: Collect all diffs for email
-    ansible.builtin.set_fact:
-      all_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_text') | select('defined') | list }}"
-    run_once: true
+- name: Generate visually formatted config diff
+  ansible.builtin.set_fact:
+    config_diff_text: |
+      ─────────────────────────────────────────────────────────────
+      🖥️ Host: {{ inventory_hostname }}
+      📄 Golden Config: {{ golden_base_dir }}/{{ inventory_hostname }}.txt
+      📅 Timestamp: {{ date_tag }}
+      ─────────────────────────────────────────────────────────────
 
-  - name: Combine all diffs into enterprise-style report
-    ansible.builtin.set_fact:
-      email_body: |
-        🔧 CONFIGURATION DIFF REPORT — ENTERPRISE SUMMARY
-        ===================================================
-        🕒 Date: {{ date_tag }}
-        📬 Recipients: {{ email_to }}
-        ===================================================
+      🔻 Missing (in Golden but not in Live):
+      {% set removed = golden_config_lines | difference(startup_config_lines) %}
+      {% if removed %}
+      {% for line in removed %}
+        - [Line {{ golden_config_lines.index(line) + 1 }}] {{ line }}
+      {% endfor %}
+      {% else %}
+        ✅ None
+      {% endif %}
 
-        {% for diff in all_diffs %}
-        {{ diff }}
-        {% endfor %}
+      ─────────────────────────────────────────────────────────────
 
-        ===================================================
-        📢 END OF REPORT
-    when: all_diffs | length > 0
-    run_once: true
+      🔺 Added (in Live but not in Golden):
+      {% set added = startup_config_lines | difference(golden_config_lines) %}
+      {% if added %}
+      {% for line in added %}
+        + [Line {{ startup_config_lines.index(line) + 1 }}] {{ line }}
+      {% endfor %}
+      {% else %}
+        ✅ None
+      {% endif %}
 
-  - name: Send email with config diffs
-    ansible.builtin.mail:
-      host: "{{ smtp_host }}"
-      port: "{{ smtp_port }}"
-      username: "{{ smtp_username }}"
-      password: "{{ smtp_password }}"
-      to: "{{ email_to }}"
-      subject: "🛠 Config Diff Report – {{ date_tag }}"
-      body: "{{ email_body }}"
-      secure: always
-      sender: root
-      timeout: 20
-      charset: utf-8
-    when: email_body is defined
-    run_once: true
-    delegate_to: localhost
+      ─────────────────────────────────────────────────────────────
+      ✅ End of diff for {{ inventory_hostname }}
+  when: has_diff | default(false)
+
+- name: Save config diff to file
+  ansible.builtin.copy:
+    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt"
+    content: "{{ config_diff_text }}"
+  when: has_diff | default(false)
+  delegate_to: localhost
+
+### 🟩 EMAIL SECTION ###
+
+- name: Collect all diffs for email
+  ansible.builtin.set_fact:
+    all_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_text') | select('defined') | list }}"
+  run_once: true
+
+- name: Combine all diffs into report
+  ansible.builtin.set_fact:
+    email_body: |
+      🔧 CONFIGURATION DIFF REPORT — SUMMARY
+      ===================================================
+      🕒 Date: {{ date_tag }}
+      📬 Recipients: {{ email_to }}
+      ===================================================
+
+      {% for diff in all_diffs %}
+      {{ diff }}
+      {% endfor %}
+
+      ===================================================
+      📢 END OF REPORT
+  when: all_diffs | length > 0
+  run_once: true
+
+- name: Send email with config diffs
+  ansible.builtin.mail:
+    host: "{{ smtp_host }}"
+    port: "{{ smtp_port }}"
+    username: "{{ smtp_username }}"
+    password: "{{ smtp_password }}"
+    to: "{{ email_to }}"
+    subject: "🛠 Config Diff Report – {{ date_tag }}"
+    body: "{{ email_body }}"
+    secure: always
+    sender: root
+    timeout: 20
+    charset: utf-8
+  when: email_body is defined
+  run_once: true
+  delegate_to: localhost
