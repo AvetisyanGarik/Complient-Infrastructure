@@ -38,8 +38,11 @@
       when: ansible_network_os == 'cisco.asa.asa'
 
     # === PLATFORM-INDEPENDENT PROCESSING ===
-
-    - name: Normalize and sort startup config lines
+    - name: Normalize golden config lines
+      ansible.builtin.set_fact:
+        golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | select('match', '.+') | list }}"
+    
+    - name: Normalize startup config lines
       ansible.builtin.set_fact:
         startup_config_lines: >-
           {{
@@ -47,60 +50,55 @@
               startup_config_ios.stdout[0]
               if startup_config_ios is defined and startup_config_ios.stdout is defined
               else startup_config_asa.stdout[0]
-            ).split('\n') | map('trim') | select('match', '.+') | list | sort
+            ).split('\n') | map('trim') | select('match', '.+') | list
           }}
-
-    - name: Set config_diff
+    
+    - name: Compute lines missing from live (in golden but not in startup)
       ansible.builtin.set_fact:
-        config_diff: "{{ startup_config_lines | difference(golden_config_lines) }}"
-      when: golden_config_lines is defined and startup_config_lines is defined
-
+        missing_lines: "{{ golden_config_lines | difference(startup_config_lines) }}"
+    
+    - name: Compute lines added in live (in startup but not in golden)
+      ansible.builtin.set_fact:
+        added_lines: "{{ startup_config_lines | difference(golden_config_lines) }}"
+    
     - name: Set has_diff flag
       ansible.builtin.set_fact:
-        has_diff: "{{ config_diff | length > 0 }}"
-      when: config_diff is defined
-
-    - name: Show differences
-      ansible.builtin.debug:
-        msg: |
-          Differences found for {{ inventory_hostname }}:
-          {{ config_diff }}
-      when: has_diff | default(false)
-
-    - name: Generate visually formatted config diff
+        has_diff: "{{ (missing_lines | length > 0) or (added_lines | length > 0) }}"
+    
+    - name: Generate human-readable config diff text
       ansible.builtin.set_fact:
         config_diff_text: |
           ─────────────────────────────────────────────────────────────
           🖥️ Host: {{ inventory_hostname }}
-          📄 Golden Config: {{ golden_base_dir }}/{{ inventory_hostname }}.txt
           📅 Timestamp: {{ date_tag }}
+          📄 Golden Config: {{ golden_base_dir }}/{{ inventory_hostname }}.txt
           ─────────────────────────────────────────────────────────────
-
+    
           🔻 Missing (in Golden but not in Live):
-          {% set removed = golden_config_lines | difference(startup_config_lines) %}
-          {% if removed %}
-          {% for line in removed %}
-            - [Line {{ golden_config_lines.index(line) + 1 }}] {{ line }}
+          {% if missing_lines | length > 0 %}
+          {% for line in missing_lines %}
+            - {{ line }}
           {% endfor %}
           {% else %}
             ✅ None
           {% endif %}
-
+    
           ─────────────────────────────────────────────────────────────
-
+    
           🔺 Added (in Live but not in Golden):
-          {% set added = startup_config_lines | difference(golden_config_lines) %}
-          {% if added %}
-          {% for line in added %}
-            + [Line {{ startup_config_lines.index(line) + 1 }}] {{ line }}
+          {% if added_lines | length > 0 %}
+          {% for line in added_lines %}
+            + {{ line }}
           {% endfor %}
           {% else %}
             ✅ None
           {% endif %}
-
+    
           ─────────────────────────────────────────────────────────────
           ✅ End of diff for {{ inventory_hostname }}
       when: has_diff | default(false)
+    
+    
 
     - name: Save config diff to file
       ansible.builtin.copy:
