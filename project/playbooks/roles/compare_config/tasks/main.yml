@@ -29,7 +29,7 @@
 - name: Get running config (Cisco ASA)
   cisco.asa.asa_command:
     commands:
-      - show startup-config
+      - show running-config #ASA specific
   register: startup_config_asa
   when: ansible_network_os == 'cisco.asa.asa'
 
