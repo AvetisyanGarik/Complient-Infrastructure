@@ -64,7 +64,7 @@
 
     - name: Compose final email body
       ansible.builtin.set_fact:
-        email_body: >-
+        email_body_html: >-
           <html>
             <body>
               <h2>🔧 CONFIGURATION DIFF REPORT – SUMMARY</h2>
@@ -84,6 +84,7 @@
       run_once: true
 
 
+
     - name: Send email with HTML diff
       ansible.builtin.mail:
         host: "{{ smtp_host }}"
@@ -95,6 +96,10 @@
         body: "{{ email_body_html }}"
         subtype: html
         secure: always
-        sender: "root@example.com"
+        sender: root
+        timeout: 20
+        charset: utf-8
+      when: email_body_html is defined
       run_once: true
       delegate_to: localhost
+
