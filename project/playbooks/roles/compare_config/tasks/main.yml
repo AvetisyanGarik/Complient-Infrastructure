@@ -44,20 +44,20 @@
     - name: Write golden config to temp file
       copy:
         content: "{{ golden_config_lines | join('\n') }}"
-        dest: "/tmp/{{ inventory_hostname }}_golden.txt"
+        dest: "{{ inventory_hostname }}.txt"
       delegate_to: localhost
 
     - name: Write live config to temp file
       copy:
         content: "{{ startup_config_lines | join('\n') }}"
-        dest: "/tmp/{{ inventory_hostname }}_live.txt"
+        dest: "{{ inventory_hostname }}_live.txt"
       delegate_to: localhost
 
     - name: Run diff using difflib
       shell: |
         python3 -c "
         import difflib
-        with open('/tmp/{{ inventory_hostname }}_golden.txt') as f1, open('/tmp/{{ inventory_hostname }}_live.txt') as f2:
+        with open('{{ inventory_hostname }}.txt') as f1, open('{{ inventory_hostname }}_live.txt') as f2:
             diff = list(difflib.unified_diff(
                 f1.readlines(),
                 f2.readlines(),
@@ -66,7 +66,7 @@
                 lineterm=''
             ))
             print(''.join(diff))
-        " > /tmp/{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt
+        " > {{ inventory_hostname }}_config_diff_{{ date_tag }}.txt
       args:
         executable: /bin/bash
       register: diff_result
@@ -76,7 +76,7 @@
 
     - name: Read diff output file
       slurp:
-        src: "/tmp/{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt"
+        src: "{{ inventory_hostname }}_config_diff_{{ date_tag }}.txt"
       register: diff_slurp
       delegate_to: localhost
 
