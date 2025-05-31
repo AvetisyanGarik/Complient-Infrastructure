@@ -64,19 +64,25 @@
 
     - name: Compose final email body
       ansible.builtin.set_fact:
-        email_body_html: |
+        email_body: >-
           <html>
-          <body>
-          <h2>🛠 Configuration Diff Report</h2>
-          <p>Date: {{ date_tag }}</p>
-          {% for host in groups['all'] %}
-            <h3>{{ host }}</h3>
-            {{ hostvars[host]['config_diff_html'] | safe }}
-            <hr>
-          {% endfor %}
-          </body>
+            <body>
+              <h2>🔧 CONFIGURATION DIFF REPORT – SUMMARY</h2>
+              <p><strong>📅 Date:</strong> {{ date_tag }}</p>
+              <p><strong>📬 Recipients:</strong> {{ email_to }}</p>
+              <hr>
+              {% for host in groups['all'] %}
+                {% if hostvars[host]['config_diff_html'] is defined %}
+                  {{ hostvars[host]['config_diff_html'] }}
+                  <hr>
+                {% endif %}
+              {% endfor %}
+              <p>📢 END OF REPORT</p>
+            </body>
           </html>
+      when: all_html_diffs | length > 0
       run_once: true
+
 
     - name: Send email with HTML diff
       ansible.builtin.mail:
