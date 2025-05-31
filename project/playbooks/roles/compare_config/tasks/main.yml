@@ -55,8 +55,12 @@
 
     - name: Gather all HTML diffs
       ansible.builtin.set_fact:
-        all_html_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_html') | list }}"
+        all_html_diffs: >-
+          {{
+            groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list
+          }}
       run_once: true
+
 
     - name: Compose final email body
       ansible.builtin.set_fact:
