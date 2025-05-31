@@ -12,9 +12,10 @@
       delegate_to: localhost
       ignore_errors: false
 
-    - name: Decode golden config
+    - name: Set golden config lines if file was read
       ansible.builtin.set_fact:
-        golden_config_lines: "{{ golden_config_content.content | b64decode | splitlines }}"
+        golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | list }}"
+      when: golden_config_content is defined and golden_config_content.content is defined
 
     - name: Get running/startup config from IOS
       cisco.ios.ios_command:
