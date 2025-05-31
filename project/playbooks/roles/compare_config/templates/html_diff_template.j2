@@ -1,0 +1,55 @@
+{# html_diff_template.j2 #}
+{% set diff = [] %}
+{% set differ = namespace(html='') %}
+{% set golden = golden_config_lines %}
+{% set live = startup_config_lines %}
+
+{% set html_header = """
+<style>
+  table.diff {font-family:Courier; border:medium;}
+  .diff_header {background-color:#e0e0e0}
+  td.diff_header {text-align:right}
+  .diff_next {background-color:#c0c0c0}
+  .diff_add {background-color:#aaffaa}
+  .diff_chg {background-color:#ffff77}
+  .diff_sub {background-color:#ffaaaa}
+</style>
+<h3>Golden vs Live Configuration Diff</h3>
+""" %}
+
+{{ html_header }}
+<table class="diff" cellspacing="0" cellpadding="4">
+  <thead>
+    <tr>
+      <th colspan="2">Golden Config</th>
+      <th colspan="2">Live Config</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for group in golden | zip(live)|list %}
+    {% set golden_line = group[0] if group[0] is defined else '' %}
+    {% set live_line = group[1] if group[1] is defined else '' %}
+    {% if golden_line == live_line %}
+      <tr>
+        <td colspan="2">{{ golden_line }}</td>
+        <td colspan="2">{{ live_line }}</td>
+      </tr>
+    {% else %}
+      <tr>
+        <td class="diff_sub" colspan="2">{{ golden_line }}</td>
+        <td class="diff_add" colspan="2">{{ live_line }}</td>
+      </tr>
+    {% endif %}
+  {% endfor %}
+
+  {% if golden|length > live|length %}
+    {% for line in golden[live|length:] %}
+      <tr><td class="diff_sub" colspan="2">{{ line }}</td><td colspan="2"></td></tr>
+    {% endfor %}
+  {% elif live|length > golden|length %}
+    {% for line in live[golden|length:] %}
+      <tr><td colspan="2"></td><td class="diff_add" colspan="2">{{ line }}</td></tr>
+    {% endfor %}
+  {% endif %}
+  </tbody>
+</table>
