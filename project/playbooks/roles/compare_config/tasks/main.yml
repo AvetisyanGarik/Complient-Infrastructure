@@ -1,105 +1,102 @@
-    - name: Ensure output directory exists
-      ansible.builtin.file:
-        path: "{{ output_dir }}"
-        state: directory
-        mode: '0755'
-      delegate_to: localhost
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
 
-    - name: Read golden config file
-      ansible.builtin.slurp:
-        src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
-      register: golden_config_content
-      delegate_to: localhost
-      ignore_errors: false
+- name: Read golden config file
+  ansible.builtin.slurp:
+    src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
+  register: golden_config_content
+  delegate_to: localhost
+  ignore_errors: false
 
-    - name: Set golden config lines if file was read
-      ansible.builtin.set_fact:
-        golden_config_lines: "{{ (golden_config_content.content | b64decode).split('\n') | map('trim') | list }}"
-      when: golden_config_content is defined and golden_config_content.content is defined
+- name: Get running/startup config from IOS
+  cisco.ios.ios_command:
+    commands: [ "show startup-config" ]
+  register: startup_config_ios
+  when: ansible_network_os == 'cisco.ios.ios'
 
-    - name: Get running/startup config from IOS
-      cisco.ios.ios_command:
-        commands: [ "show startup-config" ]
-      register: startup_config_ios
-      when: ansible_network_os == 'cisco.ios.ios'
+- name: Get running config from ASA
+  cisco.asa.asa_command:
+    commands: [ "show running-config" ]
+  register: startup_config_asa
+  when: ansible_network_os == 'cisco.asa.asa'
 
-    - name: Get running config from ASA
-      cisco.asa.asa_command:
-        commands: [ "show running-config" ]
-      register: startup_config_asa
-      when: ansible_network_os == 'cisco.asa.asa'
+- name: Extract config lines from device
+  ansible.builtin.set_fact:
+    startup_config_lines: >-
+      {{
+        (
+          startup_config_ios.stdout[0]
+          if startup_config_ios is defined and startup_config_ios.stdout is defined
+          else startup_config_asa.stdout[0]
+        ).split('\n') | map('trim') | list
+      }}
 
-    - name: Extract config lines from device
-      ansible.builtin.set_fact:
-        startup_config_lines: >-
-          {{
-            (
-              startup_config_ios.stdout[0]
-              if startup_config_ios is defined and startup_config_ios.stdout is defined
-              else startup_config_asa.stdout[0]
-            ).split('\n') | map('trim') | list
-          }}
+- name: Set golden and live config lines
+  set_fact:
+    golden_lines: "{{ golden_config_content.content | b64decode | decode('utf-8') | splitlines }}"
+    live_lines: "{{ startup_config_lines }}"
 
-    - name: Generate HTML diff with difflib
-      ansible.builtin.set_fact:
-        config_diff_html: >-
-          {{
-            lookup('template', 'html_diff_template.j2')
-          }}
+- name: Generate HTML diff file
+  vars:
+    golden: "{{ golden_lines }}"
+    live: "{{ live_lines }}"
+  set_fact:
+    config_diff_html: "{{ lookup('pipe', 'python3 -c \"import difflib; print(difflib.HtmlDiff(tabsize=4).make_file(' + repr(golden) + ',' + repr(live) + ', fromdesc=\\'Golden Config\\', todesc=\\'Live Config\\'))\"') }}"
 
-    - name: Save diff HTML file
-      ansible.builtin.copy:
-        content: "{{ config_diff_html }}"
-        dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.html"
-      delegate_to: localhost
+- name: Save diff HTML file
+  ansible.builtin.copy:
+    content: "{{ config_diff_html }}"
+    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.html"
+  delegate_to: localhost
 
-    - name: Gather all HTML diffs
-      ansible.builtin.set_fact:
-        all_html_diffs: >-
-          {{
-            groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list
-          }}
-      run_once: true
+- name: Gather all HTML diffs
+  ansible.builtin.set_fact:
+    all_html_diffs: >-
+      {{
+        groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list
+      }}
+  run_once: true
 
-
-    - name: Compose final email body
-      ansible.builtin.set_fact:
-        email_body_html: >-
-          <html>
-            <body>
-              <h2>🔧 CONFIGURATION DIFF REPORT – SUMMARY</h2>
-              <p><strong>📅 Date:</strong> {{ date_tag }}</p>
-              <p><strong>📬 Recipients:</strong> {{ email_to }}</p>
+- name: Compose final email body
+  ansible.builtin.set_fact:
+    email_body_html: >-
+      <html>
+        <body>
+          <h2>🔧 CONFIGURATION DIFF REPORT – SUMMARY</h2>
+          <p><strong>📅 Date:</strong> {{ date_tag }}</p>
+          <p><strong>📬 Recipients:</strong> {{ email_to }}</p>
+          <hr>
+          {% for host in groups['all'] %}
+            {% if hostvars[host]['config_diff_html'] is defined %}
+              <h3>Diff for {{ host }}</h3>
+              {{ hostvars[host]['config_diff_html'] | safe }}
               <hr>
-              {% for host in groups['all'] %}
-                {% if hostvars[host]['config_diff_html'] is defined %}
-                  {{ hostvars[host]['config_diff_html'] }}
-                  <hr>
-                {% endif %}
-              {% endfor %}
-              <p>📢 END OF REPORT</p>
-            </body>
-          </html>
-      when: all_html_diffs | length > 0
-      run_once: true
+            {% endif %}
+          {% endfor %}
+          <p>📢 END OF REPORT</p>
+        </body>
+      </html>
+  when: all_html_diffs | length > 0
+  run_once: true
 
-
-
-    - name: Send email with HTML diff
-      ansible.builtin.mail:
-        host: "{{ smtp_host }}"
-        port: "{{ smtp_port }}"
-        username: "{{ smtp_username }}"
-        password: "{{ smtp_password }}"
-        to: "{{ email_to }}"
-        subject: "🛠 Config Diff Report – {{ date_tag }}"
-        body: "{{ email_body_html }}"
-        subtype: html
-        secure: always
-        sender: root
-        timeout: 20
-        charset: utf-8
-      when: email_body_html is defined
-      run_once: true
-      delegate_to: localhost
-
+- name: Send email with HTML diff
+  ansible.builtin.mail:
+    host: "{{ smtp_host }}"
+    port: "{{ smtp_port }}"
+    username: "{{ smtp_username }}"
+    password: "{{ smtp_password }}"
+    to: "{{ email_to }}"
+    subject: "🛠 Config Diff Report – {{ date_tag }}"
+    body: "{{ email_body_html }}"
+    subtype: html
+    secure: always
+    sender: root
+    timeout: 20
+    charset: utf-8
+  when: email_body_html is defined
+  run_once: true
+  delegate_to: localhost
