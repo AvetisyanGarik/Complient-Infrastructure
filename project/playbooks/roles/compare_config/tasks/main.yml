@@ -33,8 +33,11 @@
       ansible.builtin.set_fact:
         startup_config_lines: >-
           {{
-            (startup_config_ios.stdout[0] if startup_config_ios is defined and startup_config_ios.stdout is defined
-            else startup_config_asa.stdout[0]) | splitlines
+            (
+              startup_config_ios.stdout[0]
+              if startup_config_ios is defined and startup_config_ios.stdout is defined
+              else startup_config_asa.stdout[0]
+            ).split('\n') | map('trim') | list
           }}
 
     - name: Generate HTML diff with difflib
