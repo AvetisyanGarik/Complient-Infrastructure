@@ -1,3 +1,4 @@
+# Ensure output directory exists
 - name: Ensure output directory exists
   ansible.builtin.file:
     path: "{{ output_dir }}"
@@ -5,55 +6,79 @@
     mode: '0755'
   delegate_to: localhost
 
+# Read golden config file
 - name: Read golden config file
   ansible.builtin.slurp:
     src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
   register: golden_config_content
   delegate_to: localhost
-  ignore_errors: false
 
-- name: Get running/startup config from IOS
+# Get running/startup config from IOS
+- name: Get startup config from IOS
   cisco.ios.ios_command:
-    commands: [ "show startup-config" ]
+    commands: ["show startup-config"]
   register: startup_config_ios
   when: ansible_network_os == 'cisco.ios.ios'
 
+# Get running config from ASA
 - name: Get running config from ASA
   cisco.asa.asa_command:
-    commands: [ "show running-config" ]
+    commands: ["show running-config"]
   register: startup_config_asa
   when: ansible_network_os == 'cisco.asa.asa'
 
-- name: Extract config lines from device
-  ansible.builtin.set_fact:
-    startup_config_lines: >-
+# Set golden and live config lines
+- name: Set golden and live config lines
+  set_fact:
+    golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
+    live_lines: >-
       {{
         (
           startup_config_ios.stdout[0]
           if startup_config_ios is defined and startup_config_ios.stdout is defined
           else startup_config_asa.stdout[0]
-        ).split('\n') | map('trim') | list
+        ).split('\n') | list
       }}
 
-- name: Set golden and live config lines
-  set_fact:
-    golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
-    live_lines: "{{ startup_config_lines }}"
+# Write Python script to generate HTML diff
+- name: Write Python script to generate HTML diff
+  copy:
+    dest: "/tmp/gen_diff_{{ inventory_hostname }}.py"
+    content: |
+      import difflib
+      import json
 
-- name: Generate HTML diff file
-  vars:
-    golden: "{{ golden_lines }}"
-    live: "{{ live_lines }}"
-  set_fact:
-    config_diff_html: >-
-      {{ lookup('pipe', 'python3 -c "import difflib; print(difflib.HtmlDiff(tabsize=4).make_file(' + repr(golden) + ',' + repr(live) + ', fromdesc=\\'Golden Config\\', todesc=\\'Live Config\\'))"') }}
+      golden = json.loads('''{{ golden_lines | to_json | replace("'", "\\'") }}''')
+      live = json.loads('''{{ live_lines | to_json | replace("'", "\\'") }}''')
 
-- name: Generate HTML diff file
-  vars:
-    golden: "{{ golden_lines }}"
-    live: "{{ live_lines }}"
+      html_diff = difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config')
+      print(html_diff)
+  delegate_to: localhost
+
+# Execute the Python script
+- name: Generate HTML diff by running Python script
+  command: python3 /tmp/gen_diff_{{ inventory_hostname }}.py
+  register: config_diff_html_raw
+  delegate_to: localhost
+
+# Save diff result into a fact
+- name: Save config_diff_html fact
   set_fact:
-    config_diff_html: "{{ lookup('pipe', 'python3 -c \"import difflib; import sys; golden='+golden|to_json+'; live='+live|to_json+'; print(difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc=\\'Golden Config\\', todesc=\\'Live Config\\'))\"') }}"
+    config_diff_html: "{{ config_diff_html_raw.stdout }}"
+
+# Clean up temp Python script
+- name: Remove temporary diff script
+  file:
+    path: "/tmp/gen_diff_{{ inventory_hostname }}.py"
+    state: absent
+  delegate_to: localhost
+
+# Save diff HTML to file
+- name: Save HTML diff to file
+  copy:
+    content: "{{ config_diff_html }}"
+    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.html"
+  delegate_to: localhost
 
 - name: Gather all HTML diffs
   ansible.builtin.set_fact:
