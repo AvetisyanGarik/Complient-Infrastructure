@@ -11,15 +11,15 @@
   register: golden_config_content
   delegate_to: localhost
 
-- name: Get startup config from IOS
+- name: Get running/startup config from IOS
   cisco.ios.ios_command:
-    commands: [ "show startup-config" ]
+    commands: ["show startup-config"]
   register: startup_config_ios
   when: ansible_network_os == 'cisco.ios.ios'
 
 - name: Get running config from ASA
   cisco.asa.asa_command:
-    commands: [ "show running-config" ]
+    commands: ["show running-config"]
   register: startup_config_asa
   when: ansible_network_os == 'cisco.asa.asa'
 
@@ -39,42 +39,33 @@
     golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
     live_lines: "{{ startup_config_lines }}"
 
-# ✅ Replaces risky inline Python with safe script-based diff
-- name: Write Python diff generator script
+# SAFER DIFF GENERATION
+- name: Write HTML diff generator script
   copy:
     dest: "/tmp/gen_diff_{{ inventory_hostname }}.py"
     content: |
-      import difflib
-      import json
-
+      import difflib, json
       golden = json.loads('''{{ golden_lines | to_json | replace("'", "\\'") }}''')
       live = json.loads('''{{ live_lines | to_json | replace("'", "\\'") }}''')
-
-      html_diff = difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config')
-      print(html_diff)
+      print(difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config'))
   delegate_to: localhost
 
-- name: Run Python diff generator
+- name: Run HTML diff script
   command: python3 "/tmp/gen_diff_{{ inventory_hostname }}.py"
   register: config_diff_html_raw
   delegate_to: localhost
 
 - name: Store config diff HTML in fact
-  set_fact:
+  ansible.builtin.set_fact:
     config_diff_html: "{{ config_diff_html_raw.stdout }}"
 
-- name: Delete temporary diff script
-  file:
+- name: Delete temporary script
+  ansible.builtin.file:
     path: "/tmp/gen_diff_{{ inventory_hostname }}.py"
     state: absent
   delegate_to: localhost
 
-- name: Save HTML diff to file
-  ansible.builtin.copy:
-    content: "{{ config_diff_html }}"
-    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.html"
-  delegate_to: localhost
-
+# GATHER AND EMAIL
 - name: Gather all HTML diffs
   ansible.builtin.set_fact:
     all_html_diffs: >-
@@ -94,6 +85,7 @@
           <hr>
           {% for host in groups['all'] %}
             {% if hostvars[host]['config_diff_html'] is defined %}
+              <h3>{{ host }}</h3>
               {{ hostvars[host]['config_diff_html'] | safe }}
               <hr>
             {% endif %}
