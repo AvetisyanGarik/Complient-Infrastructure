@@ -10,9 +10,8 @@
     src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
   register: golden_config_content
   delegate_to: localhost
-  ignore_errors: false
 
-- name: Get running/startup config from IOS
+- name: Get startup config from IOS
   cisco.ios.ios_command:
     commands: [ "show startup-config" ]
   register: startup_config_ios
@@ -36,24 +35,45 @@
       }}
 
 - name: Set golden and live config lines
-  set_fact:
+  ansible.builtin.set_fact:
     golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
     live_lines: "{{ startup_config_lines }}"
 
-- name: Generate HTML diff file
-  vars:
-    golden: "{{ golden_lines }}"
-    live: "{{ live_lines }}"
-  set_fact:
-    config_diff_html: >-
-      {{ lookup('pipe', 'python3 -c "import difflib; print(difflib.HtmlDiff(tabsize=4).make_file(' + repr(golden) + ',' + repr(live) + ', fromdesc=\\'Golden Config\\', todesc=\\'Live Config\\'))"') }}
+# ✅ Replaces risky inline Python with safe script-based diff
+- name: Write Python diff generator script
+  copy:
+    dest: "/tmp/gen_diff_{{ inventory_hostname }}.py"
+    content: |
+      import difflib
+      import json
 
-- name: Generate HTML diff file
-  vars:
-    golden: "{{ golden_lines }}"
-    live: "{{ live_lines }}"
+      golden = json.loads('''{{ golden_lines | to_json | replace("'", "\\'") }}''')
+      live = json.loads('''{{ live_lines | to_json | replace("'", "\\'") }}''')
+
+      html_diff = difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config')
+      print(html_diff)
+  delegate_to: localhost
+
+- name: Run Python diff generator
+  command: python3 "/tmp/gen_diff_{{ inventory_hostname }}.py"
+  register: config_diff_html_raw
+  delegate_to: localhost
+
+- name: Store config diff HTML in fact
   set_fact:
-    config_diff_html: "{{ lookup('pipe', 'python3 -c \"import difflib; import sys; golden='+golden|to_json+'; live='+live|to_json+'; print(difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc=\\'Golden Config\\', todesc=\\'Live Config\\'))\"') }}"
+    config_diff_html: "{{ config_diff_html_raw.stdout }}"
+
+- name: Delete temporary diff script
+  file:
+    path: "/tmp/gen_diff_{{ inventory_hostname }}.py"
+    state: absent
+  delegate_to: localhost
+
+- name: Save HTML diff to file
+  ansible.builtin.copy:
+    content: "{{ config_diff_html }}"
+    dest: "{{ output_dir }}/{{ inventory_hostname }}_config_diff_{{ date_tag }}.html"
+  delegate_to: localhost
 
 - name: Gather all HTML diffs
   ansible.builtin.set_fact:
