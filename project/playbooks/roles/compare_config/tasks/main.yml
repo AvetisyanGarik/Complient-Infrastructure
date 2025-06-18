@@ -37,7 +37,7 @@
 
 - name: Set golden and live config lines
   set_fact:
-    golden_lines: "{{ golden_config_content.content | b64decode | decode('utf-8') | splitlines }}"
+    golden_lines: "{{ (golden_config_content.content | b64decode) | string | splitlines }}"
     live_lines: "{{ startup_config_lines }}"
 
 - name: Generate HTML diff file
