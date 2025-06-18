@@ -1,115 +1,46 @@
 - name: Ensure output directory exists
-  ansible.builtin.file:
+  file:
     path: "{{ output_dir }}"
     state: directory
     mode: '0755'
   delegate_to: localhost
 
 - name: Read golden config file
-  ansible.builtin.slurp:
+  slurp:
     src: "{{ golden_base_dir }}/{{ inventory_hostname }}.txt"
   register: golden_config_content
   delegate_to: localhost
 
-- name: Get running/startup config from IOS
+- name: Get device config
+  when: ansible_network_os == 'cisco.ios.ios'
   cisco.ios.ios_command:
     commands: ["show startup-config"]
-  register: startup_config_ios
-  when: ansible_network_os == 'cisco.ios.ios'
+  register: device_config
 
-- name: Get running config from ASA
+- name: Get ASA config
+  when: ansible_network_os == 'cisco.asa.asa'
   cisco.asa.asa_command:
     commands: ["show running-config"]
-  register: startup_config_asa
-  when: ansible_network_os == 'cisco.asa.asa'
+  register: device_config
 
-- name: Extract config lines from device
-  ansible.builtin.set_fact:
-    startup_config_lines: >-
-      {{
-        (
-          startup_config_ios.stdout[0]
-          if startup_config_ios is defined and startup_config_ios.stdout is defined
-          else startup_config_asa.stdout[0]
-        ).split('\n') | map('trim') | list
-      }}
-
-- name: Set golden and live config lines
-  ansible.builtin.set_fact:
+- name: Set config facts
+  set_fact:
     golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
-    live_lines: "{{ startup_config_lines }}"
+    live_lines: "{{ device_config.stdout[0].split('\n') }}"
 
-# SAFER DIFF GENERATION
-- name: Write HTML diff generator script
-  copy:
+- name: Create HTML diff with Python script
+  template:
+    src: diff_report.py.j2
     dest: "/tmp/gen_diff_{{ inventory_hostname }}.py"
-    content: |
-      import difflib, json
-      golden = json.loads('''{{ golden_lines | to_json | replace("'", "\\'") }}''')
-      live = json.loads('''{{ live_lines | to_json | replace("'", "\\'") }}''')
-      print(difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config'))
   delegate_to: localhost
 
-- name: Run HTML diff script
-  command: python3 "/tmp/gen_diff_{{ inventory_hostname }}.py"
-  register: config_diff_html_raw
+- name: Run diff script
+  command: "python3 /tmp/gen_diff_{{ inventory_hostname }}.py"
+  register: diff_output
   delegate_to: localhost
+  failed_when: diff_output.rc != 0
+  changed_when: false
 
-- name: Store config diff HTML in fact
-  ansible.builtin.set_fact:
-    config_diff_html: "{{ config_diff_html_raw.stdout }}"
-
-- name: Delete temporary script
-  ansible.builtin.file:
-    path: "/tmp/gen_diff_{{ inventory_hostname }}.py"
-    state: absent
-  delegate_to: localhost
-
-# GATHER AND EMAIL
-- name: Gather all HTML diffs
-  ansible.builtin.set_fact:
-    all_html_diffs: >-
-      {{
-        groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list
-      }}
-  run_once: true
-
-- name: Compose final email body
-  ansible.builtin.set_fact:
-    email_body_html: >-
-      <html>
-        <body>
-          <h2>🔧 CONFIGURATION DIFF REPORT – SUMMARY</h2>
-          <p><strong>📅 Date:</strong> {{ date_tag }}</p>
-          <p><strong>📬 Recipients:</strong> {{ email_to }}</p>
-          <hr>
-          {% for host in groups['all'] %}
-            {% if hostvars[host]['config_diff_html'] is defined %}
-              <h3>{{ host }}</h3>
-              {{ hostvars[host]['config_diff_html'] | safe }}
-              <hr>
-            {% endif %}
-          {% endfor %}
-          <p>📢 END OF REPORT</p>
-        </body>
-      </html>
-  when: all_html_diffs | length > 0
-  run_once: true
-
-- name: Send email with HTML diff
-  ansible.builtin.mail:
-    host: "{{ smtp_host }}"
-    port: "{{ smtp_port }}"
-    username: "{{ smtp_username }}"
-    password: "{{ smtp_password }}"
-    to: "{{ email_to }}"
-    subject: "🛠 Config Diff Report – {{ date_tag }}"
-    body: "{{ email_body_html }}"
-    subtype: html
-    secure: always
-    sender: root
-    timeout: 20
-    charset: utf-8
-  when: email_body_html is defined
-  run_once: true
-  delegate_to: localhost
+- name: Set diff result
+  set_fact:
+    config_diff_html: "{{ lookup('file', '/tmp/diff_{{ inventory_hostname }}.html') }}"

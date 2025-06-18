@@ -1,8 +1,41 @@
----
-- name: Run IOS comparison if IOS hosts exist
-  import_playbook: ios_compare.yml
-  when: groups['switches'] | length > 0
+- name: Compare Cisco IOS/ASA configs to golden
+  hosts: all
+  gather_facts: false
+  roles:
+    - compare_config
 
-- name: Run ASA comparison if ASA hosts exist
-  import_playbook: asa_compare.yml
-  when: groups['firewalls'] | length > 0
+- name: Compose and send consolidated diff report
+  hosts: localhost
+  gather_facts: false
+  vars:
+    all_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list }}"
+  tasks:
+    - name: Create full HTML email body
+      set_fact:
+        email_body_html: >-
+          <html><body>
+          <h2>🔧 CONFIG DIFF REPORT – {{ date_tag }}</h2>
+          {% for host in groups['all'] %}
+            {% if hostvars[host]['config_diff_html'] is defined %}
+              <h3>🔹 Host: {{ host }}</h3>
+              {{ hostvars[host]['config_diff_html'] | safe }}
+              <hr/>
+            {% endif %}
+          {% endfor %}
+          </body></html>
+      when: all_diffs | length > 0
+
+    - name: Send email with diff report
+      mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_username }}"
+        password: "{{ smtp_password }}"
+        to: "{{ email_to }}"
+        subject: "🛠 Config Diff Report – {{ date_tag }}"
+        body: "{{ email_body_html }}"
+        subtype: html
+        secure: always
+        sender: "ansible@example.com"
+        charset: utf-8
+      when: email_body_html is defined
