@@ -11,13 +11,13 @@
   register: golden_config_content
   delegate_to: localhost
 
-- name: Get device config
+- name: Get device config (IOS)
   when: ansible_network_os == 'cisco.ios.ios'
   cisco.ios.ios_command:
     commands: ["show startup-config"]
   register: device_config
 
-- name: Get ASA config
+- name: Get device config (ASA)
   when: ansible_network_os == 'cisco.asa.asa'
   cisco.asa.asa_command:
     commands: ["show running-config"]
@@ -28,7 +28,7 @@
     golden_lines: "{{ golden_config_content.content | b64decode | split('\n') }}"
     live_lines: "{{ device_config.stdout[0].split('\n') }}"
 
-- name: Create HTML diff with Python script
+- name: Generate Python diff script
   template:
     src: diff_report.py.j2
     dest: "/tmp/gen_diff_{{ inventory_hostname }}.py"
@@ -41,6 +41,49 @@
   failed_when: diff_output.rc != 0
   changed_when: false
 
-- name: Set diff result
+- name: Read HTML diff
+  slurp:
+    src: "/tmp/diff_{{ inventory_hostname }}.html"
+  register: diff_html_raw
+  delegate_to: localhost
+
+- name: Set final HTML diff fact
   set_fact:
-    config_diff_html: "{{ lookup('file', '/tmp/diff_{{ inventory_hostname }}.html') }}"
+    config_diff_html: "{{ diff_html_raw.content | b64decode }}"
+
+- name: Consolidate and send email if diffs exist
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Gather all diffs
+      set_fact:
+        all_html_diffs: "{{ groups['all'] | map('extract', hostvars, 'config_diff_html') | select('defined') | list }}"
+
+    - name: Compose email body
+      set_fact:
+        email_body_html: >-
+          <html><body>
+          <h2>🔧 CONFIGURATION DIFF REPORT – {{ date_tag }}</h2>
+          {% for host in groups['all'] %}
+            {% if hostvars[host]['config_diff_html'] is defined %}
+              <h3>{{ host }}</h3>
+              {{ hostvars[host]['config_diff_html'] | safe }}
+              <hr>
+            {% endif %}
+          {% endfor %}
+          <p>📢 END OF REPORT</p>
+          </body></html>
+      when: all_html_diffs | length > 0
+
+    - name: Send email
+      mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port }}"
+        username: "{{ smtp_username }}"
+        password: "{{ smtp_password }}"
+        to: "{{ email_to }}"
+        subject: "🛠 Config Diff Report – {{ date_tag }}"
+        body: "{{ email_body_html }}"
+        subtype: html
+        secure: always
+      when: email_body_html is defined

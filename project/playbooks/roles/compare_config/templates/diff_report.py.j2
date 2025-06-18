@@ -1,11 +1,7 @@
+#!/usr/bin/env python3
 import difflib
-
 golden = {{ golden_lines | to_json }}
 live = {{ live_lines | to_json }}
 
-html_diff = difflib.HtmlDiff(tabsize=4).make_file(
-    golden, live, fromdesc='Golden Config', todesc='Live Config'
-)
-
 with open("/tmp/diff_{{ inventory_hostname }}.html", "w") as f:
-    f.write(html_diff)
+    f.write(difflib.HtmlDiff(tabsize=4).make_file(golden, live, fromdesc='Golden Config', todesc='Live Config'))
