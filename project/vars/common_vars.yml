@@ -1,16 +1,2 @@
----
-# Common Variables
-
-# Directory Paths for Configs
-
 golden_base_dir: "/runner/project/Configs/Git_Golden_Configs"
 output_base_dir: "/runner/project/Configs/diff_output"
-output_dir: "{{ output_base_dir }}/{{ lookup('pipe', 'date +%Y-%m-%d') }}"
-date_tag: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
-
-#Email variables
-smtp_host: "smtp.gmail.com"
-smtp_port: 465
-smtp_username: "{{ lookup('env', 'SMTP_USERNAME') }}"
-smtp_password: "{{ lookup('env', 'SMTP_PASSWORD') }}"
-email_to: "{{ lookup('env', 'EMAIL_TO') }}"

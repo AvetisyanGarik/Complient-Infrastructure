@@ -1,3 +1,11 @@
+- name: Set runtime vars (AWX-safe)
+  set_fact:
+    date_tag: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+    output_dir: "{{ output_base_dir }}/{{ lookup('pipe', 'date +%Y-%m-%d') }}"
+    smtp_username: "{{ lookup('env', 'SMTP_USERNAME') }}"
+    smtp_password: "{{ lookup('env', 'SMTP_PASSWORD') }}"
+    email_to: "{{ lookup('env', 'EMAIL_TO') }}"
+
 - name: Ensure output directory exists
   ansible.builtin.file:
     path: "{{ output_dir }}"
