@@ -1,0 +1,14 @@
+---
+# templates/email_body_report.j2
+🔧 CONFIGURATION REPORT — SUMMARY
+===================================================
+🕒 Date: {{ date_tag }}
+📬 Recipients: {{ email_to }}
+===================================================
+
+{% for diff in all_diffs %}
+{{ diff }}
+{% endfor %}
+
+===================================================
+📢 END OF REPORT

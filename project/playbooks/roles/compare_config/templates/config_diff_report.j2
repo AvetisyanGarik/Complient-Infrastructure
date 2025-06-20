@@ -1,0 +1,32 @@
+---
+# templates/diff_report.j2
+─────────────────────────────────────────────────────────────
+🖥️ Host: {{ inventory_hostname }}
+📄 Golden Config: {{ golden_config_path }}
+📅 Timestamp: {{ date_tag }}
+─────────────────────────────────────────────────────────────
+
+🔻 Missing (in Golden but not in Live):
+{% set removed = golden_config_lines | difference(current_config_lines) %}
+{% if removed %}
+{% for line in removed %}
+  - [Line {{ golden_config_lines.index(line) + 1 }}] {{ line }}
+{% endfor %}
+{% else %}
+  ✅ None
+{% endif %}
+
+─────────────────────────────────────────────────────────────
+
+🔺 Added (in Live but not in Golden):
+{% set added = current_config_lines | difference(golden_config_lines) %}
+{% if added %}
+{% for line in added %}
+  + [Line {{ current_config_lines.index(line) + 1 }}] {{ line }}
+{% endfor %}
+{% else %}
+  ✅ None
+{% endif %}
+
+─────────────────────────────────────────────────────────────
+✅ End of diff for {{ inventory_hostname }}
